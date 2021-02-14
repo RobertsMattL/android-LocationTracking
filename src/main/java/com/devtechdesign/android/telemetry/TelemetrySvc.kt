@@ -1,18 +1,30 @@
 package com.devtechdesign.android.telemetry
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.location.Location
 import android.os.Build
 import android.os.IBinder
+import android.os.Looper
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.*
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 class TelemetrySvc() : Service() {
 
+    private var manager: NotificationManager? = null
+    private var notificationBuilder: NotificationCompat.Builder? = null
+    private val LOCATION_UPDATE_INTERNAL: Long = 2000
+    private var fusedLocationClient: FusedLocationProviderClient? = null
     private val CHANNEL_ID = "ForegroundService Kotlin"
 
     companion object {
@@ -41,14 +53,58 @@ class TelemetrySvc() : Service() {
             this,
             0, notificationIntent, 0
         )
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        this.notificationBuilder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(notificationTitle)
             .setSmallIcon(R.drawable.ic_location_tracking)
             .setContentIntent(pendingIntent)
-            .build()
-        startForeground(1, notification)
-        //stopSelf();
+
+        startForeground(1, this.notificationBuilder!!.build())
         return START_NOT_STICKY
+    }
+
+    private fun updateNotification(locationText: String) {
+        this.notificationBuilder!!.setSubText("$locationText")
+        manager?.notify(1, notificationBuilder!!.build())
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        startLocation()
+    }
+
+    private fun startLocation() {
+        this.fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        var locationRequest = LocationRequest.create();
+        locationRequest.priority = LocationRequest.PRIORITY_HIGH_ACCURACY;
+        locationRequest.interval = LOCATION_UPDATE_INTERNAL
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+            return
+        }
+        (fusedLocationClient as FusedLocationProviderClient).requestLocationUpdates(locationRequest, object : LocationCallback() {
+            override
+            fun onLocationResult(locationResult: LocationResult) {
+                onLocationChanged(locationResult.lastLocation)
+            }
+        }, Looper.myLooper())
+
+    }
+
+    private fun onLocationChanged(lastLocation: Location?) {
+        updateNotification("${lastLocation?.latitude},${lastLocation?.longitude}")
     }
 
     override fun onBind(intent: Intent): IBinder? {
@@ -61,7 +117,7 @@ class TelemetrySvc() : Service() {
                 CHANNEL_ID, "Foreground Service Channel",
                 NotificationManager.IMPORTANCE_DEFAULT
             )
-            val manager = getSystemService(NotificationManager::class.java)
+            this.manager = getSystemService(NotificationManager::class.java)
             manager!!.createNotificationChannel(serviceChannel)
         }
     }
